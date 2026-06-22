@@ -1,0 +1,163 @@
+import React, { useRef, useEffect, useState } from 'react';
+import { View, StyleSheet, TouchableOpacity, Text, Alert } from 'react-native';
+import {
+  Camera,
+  PhotoFile,
+  useCameraDevice,
+  useCameraPermission,
+} from 'react-native-vision-camera';
+import Icon from 'react-native-vector-icons/Feather';
+import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
+import { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { RootStackParamList } from '../navigation/AppNavigator';
+import { launchImageLibrary, Asset } from 'react-native-image-picker';
+
+type CameraScreenNavigationProp = NativeStackNavigationProp<
+  RootStackParamList,
+  'Camera'
+>;
+
+type CameraScreenRouteProp = RouteProp<RootStackParamList, 'Camera'>;
+
+export default function CameraScreen() {
+  const device = useCameraDevice('back');
+  const { hasPermission, requestPermission } = useCameraPermission();
+  const cameraRef = useRef<Camera>(null);
+  const route = useRoute<CameraScreenRouteProp>();
+  const navigation = useNavigation<CameraScreenNavigationProp>();
+  const selectedCrop = route.params?.selectedCrop;
+  const [isProcessing, setIsProcessing] = useState(false);
+
+  useEffect(() => {
+    (async () => {
+      if (!hasPermission) {
+        await requestPermission();
+      }
+    })();
+  }, [hasPermission]);
+
+  if (device == null) return <Text>Camera Not Found..</Text>;
+  if (!hasPermission) return <Text>No Permission to Open camera</Text>;
+
+  const processImage = async (imagePath: string) => {
+    try {
+      setIsProcessing(true);
+      navigation.navigate('Preview', {
+        photo: { path: imagePath },
+        selectedCrop: selectedCrop,
+      });
+    } catch (err) {
+      Alert.alert('Error', 'Failed to process image.');
+      console.error(err);
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const handleCapture = async () => {
+    if (cameraRef.current && !isProcessing) {
+      try {
+        const photo: PhotoFile = await cameraRef.current.takePhoto({
+          flash: 'off',
+          enableShutterSound: true,
+        });
+        console.log('Captured photo:', photo);
+        await processImage(photo.path);
+      } catch (e) {
+        Alert.alert('Error', 'Failed to capture or process the image.');
+        console.error(e);
+      }
+    }
+  };
+
+  const pickImageFromGallery = async () => {
+    if (isProcessing) return;
+
+    const result = await launchImageLibrary({
+      mediaType: 'photo',
+      selectionLimit: 1,
+    });
+
+    if (result.assets && result.assets.length > 0) {
+      const asset: Asset = result.assets[0];
+      const uri = asset.uri?.replace('file://', '') ?? '';
+      console.log('Gallery image selected:', uri);
+      await processImage(uri);
+    } else if (result.didCancel) {
+      console.log('Image picker cancelled');
+    } else if (result.errorCode) {
+      Alert.alert('Error', result.errorMessage || 'Unknown error');
+    }
+  };
+
+  return (
+    <View style={styles.container}>
+      <Camera
+        style={StyleSheet.absoluteFill}
+        device={device}
+        isActive={true}
+        ref={cameraRef}
+        photo={true}
+      />
+
+      {/* NEW HEADER FOR SELECTED CROP */}
+      {selectedCrop && (
+        <View style={styles.header}>
+          <Text style={styles.headerText}>
+            Please scan a {selectedCrop} Leaf
+          </Text>
+        </View>
+      )}
+
+      <TouchableOpacity style={styles.captureButton} onPress={handleCapture}>
+        <Icon name="camera" size={30} color="#000" />
+      </TouchableOpacity>
+
+      <TouchableOpacity
+        style={styles.galleryButton}
+        onPress={pickImageFromGallery}
+      >
+        <Icon name="image" size={28} color="#000" />
+      </TouchableOpacity>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+  },
+  // NEW STYLES FOR THE HEADER
+  header: {
+    position: 'absolute',
+    // top: 50,
+    bottom: 120,
+    width: '100%',
+    alignItems: 'center',
+    paddingVertical: 10,
+    backgroundColor: 'rgba(0, 0, 0, 0.4)', // Semi-transparent black
+  },
+  headerText: {
+    color: 'white',
+    fontSize: 18,
+    fontWeight: 'bold',
+  },
+  captureButton: {
+    position: 'absolute',
+    bottom: 40,
+    alignSelf: 'center',
+    backgroundColor: 'white',
+    padding: 18,
+    borderRadius: 50,
+    elevation: 5,
+  },
+  galleryButton: {
+    position: 'absolute',
+    bottom: 40,
+    right: 30,
+    backgroundColor: 'white',
+    padding: 16,
+    borderRadius: 50,
+    elevation: 5,
+  },
+});
